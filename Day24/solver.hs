@@ -5,98 +5,8 @@ import Prelude hiding (lookup)
 import Data.Char (isDigit)
 import Control.Monad.State (State, MonadState (state), runState, foldM)
 import Debug.Trace (traceShow)
-
-type Wire = String -- e.g. "Z01"
-type WireValue = Bool -- 0 or 1
-data LogicGate = AND | OR | XOR deriving (Eq, Show)
-type WireValueMap = Map Wire WireValue
-type GateConnections = [(Wire, LogicGate, Wire, Wire)]
-type Input = (WireValueMap, GateConnections)
-
-main :: IO ()
-main = do
-  input <- readFile "input.txt"
-  let parsedInput = parseInput input
-  print parsedInput
-  print $ solve parsedInput
-
-parseInput :: String -> Input
-parseInput s = (inputMap, inputOperations) where
-  (startValues, operations) :: (String, String) = let s' = splitOn "\n\n" s in (head s', s' !! 1)
-  inputMap = fromList (map ((\ v -> (init (head v), parseBool (v !! 1)) ) . words) (lines startValues))
-  inputOperations = map ((\v -> (head v, parseGate (v !! 1), v !! 2, v !! 4)) . words) (lines operations)
-  parseGate = \case
-    "AND" -> AND
-    "OR"  -> OR
-    "XOR" -> XOR
-    _     -> error "this gate should not occur"
-  parseBool = \case
-    "1" -> True
-    "0" -> False
-    _   -> error "this boolean value should not occur"
-
-solve :: Input -> Int
-solve (wireMap, connections) = (boolsToInt . (\v -> traceShow v v) . bits . (\v -> traceShow v v) . filterZ) connections where
-  -- filter the gate-connections starting with a 'z', and sort them on number
-  filterZ :: GateConnections -> GateConnections = reverse . sortOn (\(_,_,_,wire) -> wire) . filter (\(_,_,_,wire) -> head wire == 'z')
-  -- FIXME: `postscanl` is identical to my `tail . scanl` but I cannot use it
-  bits :: GateConnections -> [WireValue] = map fst . tail . scanl (\(_,wireMap) (_,_,_,wire) -> runState (applyGate connections wire) wireMap) (True, wireMap)
-
-{-
-(After sorting on Z-number)
-
-Apply `runState (applyGate connections w) wireMap` to the first in the list
-This will return a value and a new map. Apply this map to the second in the list while returning the value
-This way, it will be like a MAP in the sense that it returns an updated list, but it continuously passes on an updated Map.
-You'd have a function that takes a map, uses it to change a value and return an updated map, and pass that on. Almost like a state.
-Maybe MapM on a State Monad works after all...?
-
-The type would be:
-> mapM :: (a -> (State Map) b) -> [a] -> (State Map) [b]
-Which seems... plausible. But does it pass the map around?
-
-Maybe you should NOT use a Map, but instead a fold or smth.
-You want to use the returned value from the state, namely (a,s), to return a and pass s.
-
-map has type:
-> (a -> b) -> [a] -> [b]
-I want the `[a] -> [b]` aspect
-foldr has type:
-> (a -> b -> b) -> b -> [a] -> b
-I want the `(a -> b -> b)` aspect
-
-I want a function:
-> (a -> b -> b) -> b -> [a] -> [b]
-It gets an element from the list (a), and the previous result (b), and produces a new (b).
-Hoogle knows this type signature as `scanr`... interesting. Yes! This is it!
--}
-
-
-
-boolsToInt :: [Bool] -> Int
-boolsToInt = sum . zipWith (\i b -> if b then 2^i else 0) [0..] . reverse
-
--- given a list of gateConnections (input, never changing) and a single Wire to get the result for, get a Map and produce a result and an updated Map
-applyGate :: GateConnections -> Wire -> State WireValueMap WireValue
-applyGate connections wire = state $ \wireMap -> let wireVal = lookup wire wireMap in case wireVal of
-  Just wireVal' -> (wireVal', wireMap) -- a `map (,wireMap) v <|>` surely doesn't work since the second part is not a maybe. I could wrap it in such though Or `maybe` with a default
-  Nothing -> let connection = find (\(_,_,_,wire') -> wire' == wire) connections in case connection of
-    Nothing -> error "if the value of a wire is not yet known, it should always be the result of a gate-connection"
-    Just (w1, g, w2, _) ->
-      let (b1, w') = runState (applyGate connections w1) wireMap;
-          (b2, w'') = runState (applyGate connections w2) w';
-          in (gate g b1 b2, w'')
-          -- TODO: I WANT THIS IN A DO NOTATION!
-      -- do
-      -- b1 <- applyGate connections w1
-      -- b2 <- applyGate connections w2
-      -- return $ gate g b1 b2
-
--- TODO: use Bits instead of Bool?
-gate :: LogicGate -> Bool -> Bool -> Bool
-gate AND b1 b2 = b1 && b2
-gate OR b1 b2 = b1 || b2
-gate XOR b1 b2 = b1 /= b2
+import Data.Bits ((.&.), (.|.), xor)
+import Data.Ord (Down(Down))
 
 {-
 You want to:
@@ -117,6 +27,57 @@ This way, I can even work with loops as long as they are not required for any Z 
 I hope this extra effort is worth it. Either way, it is good practice! :)
 -}
 
+type Wire = String -- e.g. "Z01"
+type WireValue = Int -- 0 or 1
+data LogicGate = AND | OR | XOR deriving (Eq, Show)
+type WireValueMap = Map Wire WireValue
+type GateConnections = [(Wire, LogicGate, Wire, Wire)]
+type Input = (WireValueMap, GateConnections)
+
+main :: IO ()
+main = do
+  input <- readFile "input.txt"
+  let parsedInput = parseInput input
+  print $ solve parsedInput
+
+parseInput :: String -> Input
+parseInput s = (inputMap, inputOperations) where
+  (startValues, operations) :: (String, String) = let s' = splitOn "\n\n" s in (head s', s' !! 1)
+  inputMap = fromList (map ((\ v -> (init (head v), read (v !! 1)) ) . words) (lines startValues))
+  inputOperations = map ((\v -> (head v, parseGate (v !! 1), v !! 2, v !! 4)) . words) (lines operations)
+  parseGate = \case
+    "AND" -> AND
+    "OR"  -> OR
+    "XOR" -> XOR
+    _     -> error "this gate should not occur"
+
+-- filter the gate-connections starting with a 'z', and sort them on number
+-- FIXME: `postscanl` is identical to my `tail . scanl` but I cannot use it. As the initial argument to `scanl` is 0 and therefor doesn't add to the value, I don't need `tail`
+solve :: Input -> Int
+solve (wireMap, connections) = (bitsToBinary . bits . filterZ) connections where
+  filterZ :: GateConnections -> GateConnections = sortOn (Down . (\(_,_,_,wire) -> wire)) . filter (\(_,_,_,wire) -> head wire == 'z')
+  bits :: GateConnections -> [WireValue] = map fst . scanl (\(_,wireMap) (_,_,_,wire) -> runState (getWirevalue connections wire) wireMap) (0, wireMap)
+
+bitsToBinary :: [Int] -> Int
+bitsToBinary = sum . zipWith (\i b -> b * 2^i) [0..] . reverse
+
+-- given a list of gateConnections (input, never changing) and a single Wire to get the result for, get a Map and produce a result and an updated Map
+getWirevalue :: GateConnections -> Wire -> State WireValueMap WireValue
+getWirevalue connections wire = state $ \wireMap -> case lookup wire wireMap of
+  Just wireVal' -> (wireVal', wireMap) -- a `map (,wireMap) v <|>` surely doesn't work since the second part is not a maybe. I could wrap it in such though Or `maybe` with a default
+  Nothing -> case find (\(_,_,_,wire') -> wire' == wire) connections of
+    Nothing -> error "if the value of a wire is not yet known in the map, it should always be the result of a gate-connection"
+    Just (w1, g, w2, _) ->
+      let (b1, w') = runState (getWirevalue connections w1) wireMap;
+          (b2, w'') = runState (getWirevalue connections w2) w';
+          gate = applyGate g
+          in (b1 `gate` b2, w'')
+
+applyGate :: LogicGate -> Int -> Int -> Int
+applyGate AND b1 b2 = b1 .&. b2
+applyGate OR b1 b2 = b1 .|. b2
+applyGate XOR b1 b2 = b1 `xor` b2
+
 
 
 
@@ -124,6 +85,11 @@ I hope this extra effort is worth it. Either way, it is good practice! :)
 
 
 
+
+-- this can be intertwined in a series of function applications
+-- e.g. `f . g . h` can become `f . traceId . g . traceId . h` to check the values coming out of `h` and `g` respectively
+traceId :: Show a => a -> a
+traceId v = traceShow v v
 
 -- all possible combinations of the two lists
 pairs :: [a] -> [b] -> [(a,b)]

@@ -9,6 +9,7 @@ type PinHeights = [Int]
 data SCell = Hashtag | Dot deriving Eq
 type Schematics = [[SCell]] -- a temporary interpretation
 
+main :: IO ()
 main = do
   input <- readFile "input.txt"
   let parsedInput = parseInput input
@@ -16,14 +17,14 @@ main = do
 
 parseInput :: String -> Pins
 parseInput s = let schemas = (map (map (map parseChar)) . schematics) s in ((map pinheight . keySchematics) schemas, (map pinheight . lockSchematics) schemas) where
-  schematics :: String -> [[String]] = map lines . splitOn "\n\n" -- split on newline, then split on double newline
+  schematics :: String -> [[String]] = map lines . splitOn "\n\n" -- split on double newline, then split on newline
   parseChar :: Char -> SCell = \case
     '#' -> Hashtag
     '.' -> Dot
     _   -> error "this symbol should not occur in the schematics."
   keySchematics :: [Schematics] -> [Schematics] = filter (all (== Hashtag) . last) -- last is unsafe but justified
   lockSchematics :: [Schematics] -> [Schematics] = filter (all (== Hashtag) . head) -- head is unsafe but justified
-  pinheight :: Schematics -> PinHeights = map ((\v -> v - 1) . length . filter (== Hashtag)) . transpose
+  pinheight :: Schematics -> PinHeights = map (pred . length . filter (== Hashtag)) . transpose
 
 solve :: Pins -> Int
 solve (keys, locks) = let maxHeight = 5 in length $ filter (\(key,lock) -> all (<= maxHeight) $ zipWith (+) key lock) (pairs keys locks)
@@ -36,6 +37,7 @@ solve (keys, locks) = let maxHeight = 5 in length $ filter (\(key,lock) -> all (
 
 
 
+-- all possible combinations of the two lists
 pairs :: [a] -> [b] -> [(a,b)]
 pairs as bs = [(a,b) | a <- as, b <- bs]
 
@@ -44,6 +46,7 @@ splitOn :: Eq a => [a] -> [a] -> [[a]]
 splitOn splitter s = splitOn' [] s where
   splitOn' acc [] = [acc]
   splitOn' acc s = let l = length splitter in if take l s == splitter then acc : splitOn' [] (drop l s) else splitOn' (acc ++ take 1 s) (drop 1 s)
+  -- FIXME: the `++` is a bit of shame
 
 -- Example: `splitOn "CD" "ABCDEF"`:
 -- See "AB", doesn't match, keep 'A'
