@@ -42,6 +42,7 @@ blinkingRules stone | even l    = [read $ take (l `div` 2) s, read $ drop (l `di
 
 -- a `maybe` function that applies `take` and returns `Nothing` when we try to take too many items
 -- => when a repeated head fails, this returns nothing
+-- This does exist, namely as `takeExactMay`, but I can't download it yet (https://hackage.haskell.org/package/safe-0.3.21/docs/Safe-Exact.html#v:takeExactMay)
 takeMaybe :: Int -> [a] -> Maybe [a]
 takeMaybe 0 as = Just []
 takeMaybe _ [] = Nothing
