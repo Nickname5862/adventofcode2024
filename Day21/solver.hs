@@ -22,6 +22,27 @@ parseInput s = s
 solve :: Input -> Int
 solve i = 0
 
+{-
+
+I have discovered that:
+- every code is independent (of course)
+- every number is independent, as they all have to end in exactly one way: first robot on the number, second and third on A
+- within that number, it is beneficial to use as many straight-lines: when the first robot is on A,
+  it requires only one press to make the second robot make the first robot move in the current direction.
+  So e.g. >>^^ is more beneficial than >^>^.
+- but an exact plan I have not... yet. How to get the shortest path? Greedy?
+
+<^ and ^< would be no difference for robot 1: it requires 2 moves
+it also would be no difference for robot 2: it would need to move from A to < and ^, doesn't matter the order. Same number of moves: 9
+it feels to me as if, as long as it goes in straight lines as often as possible, the robots do not care about the ordering in which they tackle the moves.
+  at least, for 2 moves, that is. And they always need only 2 moves, as otherwise they would undo an action they did before (e.g. through >>^<)
+So I can just take care of repeated moves (e.g. >>) and not care about the order of the moves furthermore. In other words: >>^^^ == ^^^>>
+Cool!!  
+
+Still, this is no easy feat. Walking from one move to another without passing a gap still requires some effort.
+It should think about where to move next, a plan, and then move carefully to that
+
+-}
 
 
 
