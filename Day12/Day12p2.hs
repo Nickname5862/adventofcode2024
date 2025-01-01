@@ -12,6 +12,36 @@ type Plant = (Coordinate, PlantType)
 type Regions = Map Coordinate PlantType
 type Area = Int
 type Perimeter = Int
+type Sides = Int
+
+
+{-
+For counting the number of _sides_, it is identical to count the number of _corners_.
+A corner be an outer corner or an inner corner, meaning it bends inwards or outwards.
+For a flower F, neighboring flowers G and an empty space ., these situations can occur:
+
+FG
+G.
+
+F.
+..
+
+F.
+.G
+
+All these scenario's can occur in any orientation, so they can be rotated 90, 180 and 270 degrees.
+Counting, for all flowers F, how many of these scenario's occur, results in our answer.
+It should be noted that one flower can find multiple corners, particularly when it is a one-patch region.
+
+We can check for this by going over `allDirectionsEUC` (whose directions constantly turn right) and checking whether,
+when considering entries 0 (up),1,2; entries 2,3,4; entries 4,5,6; and entries 6,7,8; are flowers, either result in:
+1) TRUE, FALSE, TRUE, or
+2) FALSE, FALSE, FALSE, or
+3) FALSE, TRUE, FALSE
+then count 1.
+Which means, considering entries `take 3 . drop 0`, `take 3 . drop 2`, `take 3 . drop 4` and `take 3 . drop 6`
+which is equal to ~ `map (\t -> take 3 . drop t) [0,2..6]`
+-}
 
 
 main :: IO ()
@@ -23,12 +53,18 @@ main = do
 parseInput :: String -> Regions
 parseInput = toCoordinateMap
 
--- Takes a full 5 seconds, but it does the trick!
+-- Takes a full 11 seconds, but it does the trick!
 solve :: Regions -> Int
-solve cmap = (sum . map ((\gardenPlot -> area gardenPlot * perimeter gardenPlot) . map fst)) trueMap where
+solve cmap = (sum . map ((\gardenPlot -> area gardenPlot * sides gardenPlot) . map fst)) trueMap where
    trueMap = repeatFloodfill cmap (assocs cmap)
    area :: [Coordinate] -> Area = length
-   perimeter :: [Coordinate] -> Perimeter = \coords -> sum $ map (\coord -> length $ filter (\dir -> (coord + dir) `notElem` coords) allDirections) coords 
+   -- we need `allDirectionsEUC ++ allDirectionsEUC` in order to get `take 3 . drop 6` to also contain the final (0,1). `allDirectionsEUC ++ [(0,1)]` would also work
+   sides :: [Coordinate] -> Sides = \flowers -> sum $ map (\flower -> length $ filter (\t -> (map (+ flower) . take 3 . drop t) (allDirectionsEUC ++ allDirectionsEUC) `matchesCornerPatternIn` flowers) [0,2..6]) flowers
+   matchesCornerPatternIn :: [Coordinate] -> [Coordinate] -> Bool = \dirs coords -> case map (`elem` coords) dirs of
+    [True, False, True]   -> True -- inner corner
+    [False, False, False] -> True -- outer corner
+    [False, True, False]  -> True -- weird double corner
+    _                     -> False
 
 -- take a flower from `remaining` (initially all), apply `floodfill`, get `coords`, and recurse on `repeatFloodFill` with the same cmap and the difference of `remaining` and `coords`
 repeatFloodfill :: Regions -> [Plant] -> [[Plant]]
@@ -39,7 +75,7 @@ floodfill :: Regions -> Plant -> [Plant] -> [Plant]
 floodfill cmap plant@(flower, t) acc | flower `notElem` keys cmap              = acc -- flower doesn't exist
                                      | maybe False (/= t) (lookup flower cmap) = acc -- flower does not have the same type
                                      | plant `elem` acc                        = acc -- flower is already processed
-                                     | otherwise                               = foldl (\acc' dir -> floodfill cmap (flower + dir, t) acc') (plant:acc) allDirections
+                                     | otherwise                               = foldl (\acc' dir -> floodfill cmap (flower + dir, t) acc') (plant:acc) allDirectionsMH
 
 
 
@@ -93,8 +129,12 @@ showCoordinateMapWithWalker (coord, c) wh = intercalate "\n" groups where
 coordinateOfChar :: Map Coordinate Char -> Char -> Maybe Coordinate
 coordinateOfChar m c = find (\key -> c `elem` lookup key m) (keys m)
 
-allDirections :: [Coordinate]
-allDirections = [(0,1), (1,0), (0,-1), (-1,0)]
+-- all ManHattan distances
+allDirectionsMH :: [Coordinate]
+allDirectionsMH = [(0,1), (1,0), (0,-1), (-1,0)]
+
+allDirectionsEUC :: [Coordinate]
+allDirectionsEUC = [(0,1), (1,1), (1,0), (1,-1), (0,-1), (-1,-1), (-1,0), (-1,1)]
 
 -- Why is this not a default implementation?
 type Coordinate = (Int, Int)
