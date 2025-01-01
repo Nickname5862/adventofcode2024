@@ -1,55 +1,78 @@
-import Data.Map (Map, empty, fromList, toList, insert, keys, lookup)
-import Data.List (intercalate, transpose, groupBy, find)
+import Data.Map (Map, empty, fromList, toList, insert, keys, lookup, assocs)
+import Data.List (intercalate, transpose, groupBy, find, (\\))
 import Prelude hiding (lookup)
 import Data.Char (isDigit)
 import Data.Maybe (fromMaybe, isJust)
+import Debug.Trace (traceShow, trace)
+import Control.Monad.State (State, MonadState (state))
 
 
-type PlantType = Char    -- e.g. 'A', 'B', or 'X'
-type Regions = Map PlantType [Coordinate]
-type Area = Int          -- => `(length . regions) char`
-type Perimeter = Int     -- => for each coordinate in `lookup char regions`, sum all directions which are not in that list
-type Price = Int
+type PlantType = Char
+type Plant = (Coordinate, PlantType)
+type Regions = Map Coordinate PlantType
+type Area = Int
+type Perimeter = Int
 
 
+main :: IO ()
 main = do
   input <- readFile "Day12.txt"
   let parsedInput = parseInput input
-  print parsedInput
-  -- print $ day12 parsedInput
-  putStr "\n"
+  print $ solve parsedInput
 
 -- This is the hardest part, parsing it to such a structure
 parseInput :: String -> Regions
-parseInput input = empty where
-  grid :: [[Char]] = lines input
-  coordGrid :: [(Coordinate, Char)] = concat $ zipWith (\y subgrid -> zipWith (\x v -> ((x,y), v)) [0..] subgrid) [0..] grid
-  -- now make regions by grouping all adjacent plants with the same plant-type. `groupBy` comes to mind, but only works for single lists.
+parseInput = toCoordinateMap
+-- now make regions by grouping all adjacent plants with the same plant-type. `groupBy` comes to mind, but only works for single lists.
 
--- We do not want to get duplicate regions, e.g. if we ask all the plants to group themselves with their neighbors
--- unless each plant checks whether it is not already part of a region. Whenever we add a plant to a region, we can remove
--- it from the list of plants left to process.
+-- Takes a full 5 seconds or smth, but it does the trick!!
+solve :: Regions -> Int
+solve cmap = (sum . map ((\gardenPlot -> area gardenPlot * perimeter gardenPlot) . map fst)) trueMap where
+   trueMap = repeatFloodfill cmap (assocs cmap)
+   area :: [Coordinate] -> Area = length
+   perimeter :: [Coordinate] -> Perimeter = \coords -> sum $ map (\coord -> length $ filter (\dir -> (coord + dir) `notElem` coords) allDirections) coords 
 
--- This is relatively easy.
-day12 :: Regions -> Price
-day12 regions = price where
-  area :: PlantType -> Area = \ptype -> length $ lookup ptype regions
-  perimeter :: PlantType -> Perimeter = \ptype ->
-    let coords :: [Coordinate] = fromMaybe [] $ lookup ptype regions
-        allDirections :: [Coordinate] = [(0,1), (1,0), (-1,0), (0,-1)] in
-          length $ map (\coord -> length $ filter (\dir -> (coord + dir) `notElem` coords) allDirections) coords
-  price :: Price = sum $ map (\ptype -> area ptype * perimeter ptype) (keys regions)
+    -- \ptype ->
+    -- let coords :: [Coordinate] = fromMaybe [] $ lookup ptype regions in
+    --       length $ map (\coord -> length $ filter (\dir -> (coord + dir) `notElem` coords) allDirections) coords
+
+-- take a flower from remaining (initially all), apply floodfill, get coords, recurse on `repeatFloodFill` with the same cmap and the intersection of remaining and coords
+repeatFloodfill :: Regions -> [Plant] -> [[Plant]]
+repeatFloodfill cmap [] = []
+repeatFloodfill cmap (plant:remaining) = let coords = floodfillF cmap plant [] in coords : repeatFloodfill cmap (remaining \\ coords)
+
+-- repeat this floodfilling for every flower
+-- TODO: Oh, dit is ook zo'n geval van "ik moet de accumulator doorgeven"...
+-- Meaning, don't make it a `concatMap`, but a `scan`
+-- And that means... State Monad again
+-- floodfill :: Regions -> Plant -> [Coordinate] -> [Plant]
+-- floodfill cmap (flower, t) acc | flower `notElem` keys cmap              = [] -- flower doesn't exist
+--                                | maybe False (/= t) (lookup flower cmap) = [] -- flower does not have the same type
+--                                | flower `elem` acc                       = [] -- flower is already processed
+--                                | otherwise                               = (flower, t) : concatMap (\dir -> floodfill cmap (flower + dir, t) (flower : acc)) allDirections
+
+floodfillF :: Regions -> Plant -> [Plant] -> [Plant]
+floodfillF cmap plant@(flower, t) acc | flower `notElem` keys cmap              = acc -- flower doesn't exist
+                                      | maybe False (/= t) (lookup flower cmap) = acc -- flower does not have the same type
+                                      | plant `elem` acc                        = acc -- flower is already processed
+                                      | otherwise                               = foldl (\acc' dir -> floodfillF cmap (flower + dir, t) acc') (plant:acc) allDirections
+
+-- floodfill should:
+-- return a list of Plants
+-- recurse on the neighbors, one by one, each being passed a [Coordinate] and returning a new [Coordinate]
+-- I might not even need a State! Maybe I just needed to replace `concatMap` with `foldl`!
+-- floodfillS :: Regions -> Plant -> State [Coordinate] [Plant]
+-- floodfillS cmap (flower, t) | flower `notElem` keys cmap              = state ([],) -- flower doesn't exist
+--                             | maybe False (/= t) (lookup flower cmap) = state ([],) -- flower does not have the same type
+--                             | otherwise                               = state $ \handledCoords -> if flower `elem` handledCoords -- flower is already processed
+--                                                                                            then ([], handledCoords)
+--                                                                                            else foldl (\(p,c) dir -> ) ([], handledCoords) allDirections
+
+
 
 
 -- Helper functions
 
-
-
-floodfillPlantgroups :: Map Coordinate Char -> [[Coordinate]]
-floodfillPlantgroups plantMap = [] where
-  inputCoordinates :: [[Coordinate]] = groupBy (\(_,y1) (_,y2) -> y1 == y2) $ keys plantMap -- group by Y-value
-  groupedV1 :: [[[Coordinate]]] = map (groupBy (\c1 c2 -> lookup c1 plantMap == lookup c2 plantMap)) inputCoordinates
-  groupedV2 :: [[Coordinate]] = [] -- 
 
 
 
@@ -107,9 +130,45 @@ You can also, at the start, perform some floodfills to replace every character w
 
 ...to be continued
 
+-------------------------------------------------------------------------------------------
+
+Let's pick it back up! I am smarter now >:)
+
+The only goal:
+- given the input, create a [[Coordinate]], with each item in the outer list being a list of garden plots
+- you can then count the perimeter by summing over all items and checking whether the neighbors are also in the list;
+- you can then count the area by taking the length;
+- the hard part? a character may represent multiple regions, preventing my `Map reversing` strategy from working
+
+=> combine all of the same character, then split them up using non-adjacency checks
+=> or combine them using adjacency checks
+both are hard!
+
+I would love to use `groupBy`, be it a custom version of it
+- Make a Map Coordinate Char
+- Then make a groupBy that groups adjacent chars by x-coordinate, into a [[(Coordinate, Char)]]
+- then, somehow, for each pair (pairwise), group all adjacent lists together. That is not trivial.
+
+o We have a `Map Coordinate Bool` to check whether you're done already
+o We have a `Map Coordinate Char` to start with
+o We make a Map Char [[Coordinate]]
+I can also try floodfill to make a Map Char [[Coordinate]]:
+- Make a Map Coordinate Char
+- for each coordinate, check if it already exists in the floodfill
+  if so, continue to the next coordinate
+  if not, ......this is getting complicated
+
+
+
+For every (coordinate,char) pair, check if it exists in a floodfill with the same char already.
+  If not, let it flood to all neighbors, adding them to a list.
+  In the end, return this list and put it in the floodfill map.
+
+Does not require passing the Map around. Only passing the list around, which we append constantly.
+That requires some `fold` behavior, where the accumulator which is returned is also passed around.
+But I want to use recursion. I would have to pass the accumulator with it.
+
 --}
-
-
 
 
 
@@ -119,6 +178,17 @@ You can also, at the start, perform some floodfills to replace every character w
 
 
 
+
+-- this can be intertwined in a series of function applications
+-- e.g. `f . g . h` can become `f . traceId . g . traceId . h` to check the values coming out of `h` and `g` respectively
+traceId :: Show a => a -> a
+traceId v = traceShow v v
+
+traceIdSuffix :: Show a => String -> a -> a
+traceIdSuffix s v = trace (s ++ show v) v
+
+traceIdLn :: Show a => a -> a
+traceIdLn = traceIdSuffix "\n"
 
 -- useful function I found for repeating a function n times.
 fpow :: Int -> (a -> a) -> a -> a
@@ -150,6 +220,9 @@ showCoordinateMapWithWalker (coord, c) wh = intercalate "\n" groups where
 -- I assume you already used `toCoordinateMap` to make a Map
 coordinateOfChar :: Map Coordinate Char -> Char -> Maybe Coordinate
 coordinateOfChar m c = find (\key -> c `elem` lookup key m) (keys m)
+
+allDirections :: [Coordinate]
+allDirections = [(0,1), (1,0), (0,-1), (-1,0)]
 
 -- Why is this not a default implementation?
 type Coordinate = (Int, Int)
