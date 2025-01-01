@@ -2,7 +2,7 @@ import Data.Map (Map, fromList, toList, insert, keys, lookup, insertWith, empty)
 import Data.List (intercalate, transpose, groupBy, find)
 import Prelude hiding (lookup)
 import Data.Char (isDigit)
-import Debug.Trace (traceShow)
+import Debug.Trace (traceShow, trace)
 
 
 type Input = String
@@ -35,7 +35,13 @@ solve i = 0
 -- this can be intertwined in a series of function applications
 -- e.g. `f . g . h` can become `f . traceId . g . traceId . h` to check the values coming out of `h` and `g` respectively
 traceId :: Show a => a -> a
-traceId v = traceShow v v
+traceId = traceIdSuffix ""
+
+traceIdLn :: Show a => a -> a
+traceIdLn = traceIdSuffix "\n"
+
+traceIdSuffix :: Show a => String -> a -> a
+traceIdSuffix s v = trace (s ++ show v) v
 
 -- all possible combinations of the two lists
 pairs :: [a] -> [b] -> [(a,b)]
@@ -43,7 +49,7 @@ pairs as bs = [(a,b) | a <- as, b <- bs]
 
 -- A function like `splitOn` seems quite useful. `lines` can then be made to be `splitOn "\n"` and words is `splitOn " "`
 splitOn :: Eq a => [a] -> [a] -> [[a]]
-splitOn splitter s = splitOn' [] s where
+splitOn splitter = splitOn' [] where
   splitOn' acc [] = [acc]
   splitOn' acc s = let l = length splitter in if take l s == splitter then acc : splitOn' [] (drop l s) else splitOn' (acc ++ take 1 s) (drop 1 s)
   -- FIXME: the `++` is a bit of a shame. I should be able to get rid of it (a `(:)` followed by a final `map reverse` works too, but is identically slow)
@@ -89,6 +95,9 @@ showCoordinateMapWithWalker (coord, c) wh = intercalate "\n" groups where
 -- I assume you already used `toCoordinateMap` to make a Map
 coordinateOfChar :: Map Coordinate Char -> Char -> Maybe Coordinate
 coordinateOfChar m c = find (\key -> c `elem` lookup key m) (keys m)
+
+allDirections :: [Coordinate]
+allDirections = [(0,1), (1,0), (0,-1), (-1,0)]
 
 -- Why is this not a default implementation?
 type Coordinate = (Int, Int)
